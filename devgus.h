@@ -124,6 +124,9 @@ protected:
     // returns play position within DMA buffer in bytes
     virtual int32_t getPlayPos();
 
+     // IRQ->callback caller
+    virtual bool        irqCallbackCaller();
+
     // advance play/render pointers
     //virtual void        irqAdvancePos();
 

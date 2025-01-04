@@ -607,8 +607,9 @@ uint32_t sndGravisUltrasound::convertAndUpload(uint32_t samples, uint32_t gusofs
         renderPos += samples;
         sample_bytes_to_render_last = bytes_to_render;
     }
-
+    
     // setup and start GF1 DMA transfer
+    // TODO: corrupts data during transfer??
     dmaSetup(dmaChannel, &dmaBlock, bytes_to_render + convinfo.bytesPerSample, dmaModeRead | dmaModeSingle | dmaModeNoAutoInit, dmablk_offset[0]);
     uint8_t dmactrl = this->dmactrl | (dmaChannel >= 4 ? 4 : 0);
     gf1_write (devinfo.iobase, -1, 0x41, dmactrl);
@@ -764,7 +765,45 @@ static void sndlib_restoreStack();
 #pragma aux sndlib_restoreStack = \
     " lss     esp, [snddev_pm_old_stack] "
 
+bool sndGravisUltrasound::irqCallbackCaller() {
+    // STACK POPIERDOLOLO
+    if (snddev_pm_stack_in_use == 0) {
+        snddev_pm_stack_in_use++;
+
+        // switch stack
+        sndlib_swapStacks();
+
+        // advance play pointers
+        irqAdvancePos();
+
+        // switch rollover and loop point
+        buffer_half = dmaRenderPtr >= dmaBufferSize ? 0 : 1;
+        uint32_t pcmloop = (channel_offset[0] + (dmaBufferSamples << (buffer_half))) << 9;
+        gf1_writew(devinfo.iobase, 0, 0x4, pcmloop >> 16);
+        gf1_writew(devinfo.iobase, 0, 0x5, pcmloop & 0xFFFF);
+        gf1_pcm_set_rollover(devinfo.iobase, 0, buffer_half == 0);
+
+        // enable interrupts
+        _enable();
+
+        // render more sound data
+        convertAndUpload(dmaBufferSamples, (buffer_half ? 0 : dmaBufferSize), false);
+
+        // and disable interrupts again
+        _disable();
+
+        // switch back
+        sndlib_restoreStack();
+
+        snddev_pm_old_stack = NULL;
+        snddev_pm_stack_in_use--;
+    }
+
+    return true;
+}
+
 // irq procedure
+// TODO: stack corruption? O_o
 bool sndGravisUltrasound::irqProc() {
     // get GUS interrupt status
     int irqstatus = inp(devinfo.iobase + 6);
@@ -781,51 +820,11 @@ bool sndGravisUltrasound::irqProc() {
     if (irqstatus & (1 << 5)) {
         // voice interrupt
 
-        // advance play pointers
-        irqAdvancePos();
-
         // clear IRQ (TODO: proper handling)
         gf1_read(devinfo.iobase, -1, 0x8F);
 
-        // switch rollover and loop point
-        buffer_half = dmaRenderPtr >= dmaBufferSize ? 0 : 1;
-        uint32_t pcmloop = (channel_offset[0] + (dmaBufferSamples << (buffer_half))) << 9;
-        gf1_writew(devinfo.iobase, 0, 0x4, pcmloop >> 16);
-        gf1_writew(devinfo.iobase, 0, 0x5, pcmloop & 0xFFFF);
-        gf1_pcm_set_rollover(devinfo.iobase, 0, buffer_half == 0);
-
-#if 1
-        // STACK POPIERDOLOLO
-        if (snddev_pm_stack_in_use == 0) {
-            snddev_pm_stack_in_use++;
-
-            // work around possible SS:EBP addressing, as we're switching stacks now
-            static sndGravisUltrasound *staticSelf;
-            static uint32_t samplesToRender;
-            static uint32_t gusDst;
-            staticSelf = this;
-            samplesToRender = dmaBufferSamples;
-            gusDst = (buffer_half ? 0 : dmaBufferSize);
-
-            // enable interrupts
-            _enable();
-
-            // switch stack
-            sndlib_swapStacks();
-
-            // render more sound data
-            staticSelf->convertAndUpload(samplesToRender, gusDst, false);
-
-            // switch back
-            sndlib_restoreStack();
-
-            // and disable interrupts again
-            _disable();
-
-            snddev_pm_old_stack = NULL;
-            snddev_pm_stack_in_use--;
-        }
-#endif
+        // call callback
+        irqCallbackCaller();
     }
     if (irqstatus & (1 << 7)) {
         // DMA TC interrupt
@@ -837,8 +836,7 @@ bool sndGravisUltrasound::irqProc() {
     outp(devinfo.iobase + 2, channel);
     outp(devinfo.iobase + 3, regindex);
 
-    return false;   // we're handling EOI by itself
+    return false;   // we're handling EOI by ourself
 }
-
 
 #endif
