@@ -16,9 +16,9 @@ DEL = rm -f
 DEL = del
 !endif
 
-AS       = nasm.exe
-CC       = wpp386.exe
-LD       = wlink.exe
+AS       = nasm
+CC       = wpp386
+LD       = wlink
 AFLAGS   = -f win32
 CFLAGS   = -5r -zp16 -onhasbmi -s -zv -d$(DLEVEL) -d_$(SYSDEF) -i=$(INCLUDE) -bt=$(BUILD)
 LFLAGS   =
