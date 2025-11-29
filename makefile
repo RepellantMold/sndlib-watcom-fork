@@ -8,7 +8,13 @@ DLEVEL   = 0
 
 SYSDEF   = DOS
 
-INCLUDE  = .\include
+INCLUDE  = ./include
+
+!ifdef __UNIX__
+DEL = rm -f
+!else
+DEL = del
+!endif
 
 AS       = nasm.exe
 CC       = wpp386.exe
@@ -36,14 +42,14 @@ $(TARGET).lib : $(OBJS) .symbolic
 
 # custom rule to enable "option eliminate"
 dpmi.obj:
-	$(CC) dpmi.cpp $(CFLAGS) -zm
+	$(CC) dpmi.cpp $(CFLAGS) -zm -fo=$@
 dma.obj:
-	$(CC) dma.cpp $(CFLAGS) -zm
+	$(CC) dma.cpp $(CFLAGS) -zm -fo=$@
 tinypci.obj:
-	$(CC) tinypci.cpp $(CFLAGS) -zm
+	$(CC) tinypci.cpp $(CFLAGS) -zm -fo=$@
 	
 .cpp.obj:
-	$(CC) $< $(CFLAGS)
+	$(CC) $< $(CFLAGS) -fo=$@
 
 .asm.obj:
-	$(AS) $< $(AFLAGS)
+	$(AS) $< $(AFLAGS) -o $@
