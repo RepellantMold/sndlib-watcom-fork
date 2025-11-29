@@ -38,7 +38,7 @@ $(TARGET).lib : $(OBJS) .symbolic
 	
 	wlib -n $(TARGET).lib
 	wlib    $(TARGET).lib @$(TARGET).ls
-	del     $(TARGET).ls
+	$(DEL)  $(TARGET).ls
 
 # custom rule to enable "option eliminate"
 dpmi.obj:
